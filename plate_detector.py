@@ -30,6 +30,8 @@ from alpr_unconstrained.src.utils import im2single
 from alpr_unconstrained.src.label import Label, lwrite, Shape, writeShapes, lread, readShapes
 from alpr_unconstrained.src.keras_utils import load_model, detect_lp
 from alpr_unconstrained.src.drawing_utils import draw_label, draw_losangle, write2img
+from plate_analysis_tool import plate_analysis
+
 
 from configurations.config import ConfigParser
 import sys,os
@@ -66,7 +68,7 @@ ocr_dataset = bytes(config_obj.ocr_dataset)
 
 ocr_net  = dn.load_net(ocr_netcfg, ocr_weights, 0)
 ocr_meta = dn.load_meta(ocr_dataset)
-ocr_threshold = .4
+ocr_threshold = .1
 
 
 class Plate_Detector():
@@ -190,6 +192,7 @@ class Plate_Detector():
 
     def video_scaner(self, video_path, output_path,
 					 time_break = 10, number_frame = 1500):
+		self.time_break = time_break
 		i = 0
 		#'video/ALRP_left_zone_A_wo_ir_dots.avi'
 		cap = cv2.VideoCapture(video_path)
@@ -202,62 +205,80 @@ class Plate_Detector():
 
 		while(cap.isOpened()):	
 			ret, frame = cap.read()
+			print("For Frame: ", i-1)
 			if i >= number_frame-1:
 				break
 			if i%time_break!=0:
 				i = i+1
-				continue
-			i = i+1
-
-			print("For Frame: ", i-1)
-			#im = cv2.resize(frame,(640,480))
-			img_path = output_path + '/screen_shot/test_car_vbot_' + str(i-1) + '.png'
-			cv2.imwrite(img_path ,frame)
-
-			#print("start detect vehicle")
-			Lcars, Iorig, WH = self.vehicle_detector(img_path)
-
-			if len(Lcars)==0:
-				os.remove(img_path)
-				continue
 			else:
-				# missing car location filter
-				plat_path = output_path + '/plate_image'
-				bname = str(i-1) + "_plate_number_"
-				#print("start detect plate")
-				Llp, plat_image_path = self.plate_detector(Iorig, plat_path, bname)
-				if Llp == None:
+				i = i+1
+
+				print("For Frame: ", i-1)
+				#im = cv2.resize(frame,(640,480))
+				img_path = output_path + '/screen_shot/test_car_vbot_' + str(i-1) + '.png'
+				check = cv2.imwrite(img_path ,frame)
+				if check == False:
+					continue
+				#print("start detect vehicle")
+				Lcars, Iorig, WH = self.vehicle_detector(img_path)
+
+				if len(Lcars)==0:
 					os.remove(img_path)
 					continue
-				plat_str_dict = {}
-				plat_str_dict["time"] = i-1
-				plat_str_dict["plat"] = []
-				plat_str_dict["Lcars"] = Lcars
-				#print("start read plate")
-				lp_str = ""
-				for Llpi, plat_path_i in zip(Llp, plat_image_path):
-					if self.car_filter(Lcars, Llp[0], WH):
-						lp_str = self.plate_recognizer(plat_path_i)
-						plat_str_dict["plat"].append({"lp_str":lp_str,
-											"lp_loc": Llpi})
-					else:
-						os.remove(plat_path_i)
+				else:
+					# missing car location filter
+					plat_path = output_path + '/plate_image'
+					bname = str(i-1) + "_plate_number_"
+					#print("start detect plate")
+					Llp, plat_image_path = self.plate_detector(Iorig, plat_path, bname)
+					if Llp == None:
+						os.remove(img_path)
+						continue
+					plat_str_dict = {}
+					plat_str_dict["time"] = i-1
+					plat_str_dict["plat"] = []
+					plat_str_dict["Lcars"] = Lcars
+					#print("start read plate")
+					lp_str = ""
+					for Llpi, plat_path_i in zip(Llp, plat_image_path):
+						if self.car_filter(Lcars, Llp[0], WH):
+							lp_str = self.plate_recognizer(plat_path_i)
+							plat_str_dict["plat"].append({"lp_str":lp_str,
+												"lp_loc": Llpi})
+						else:
+							os.remove(plat_path_i)
+							continue 
+
+					if lp_str == "":
+						os.remove(img_path)
+
 						continue 
-
-				if lp_str == "":
-					os.remove(img_path)
-
-					continue 
-					
-				plat_snap_shots.append(plat_str_dict)
+						
+					plat_snap_shots.append(plat_str_dict)
 			
 		cap.release()
 		cv2.destroyAllWindows()
 		print("Finished")
 		return plat_snap_shots
+	
+    def plats_summary(self, plat_snap_shots, diff_i = 0.12):
+		time_break = self.time_break 
+		dedup_plats = plate_analysis(plat_snap_shots, time_break=time_break, diff_i = diff_i)
+		return dedup_plats
+
+
 
 
 
 
 				
 				
+
+		
+
+
+
+		
+
+
+
